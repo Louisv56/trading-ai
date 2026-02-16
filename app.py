@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify
 import openai
 import base64
 
-openai.api_key = "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"
+import os
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 
@@ -39,3 +40,4 @@ def analyze():
     return jsonify(result)
 
 app.run(host="0.0.0.0", port=5000)
+
