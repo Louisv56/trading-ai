@@ -21,16 +21,37 @@ def analyze():
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
         prompt = """
-Tu es un expert en trading technique.
-Analyse ce graphique.
-Réponds uniquement en JSON avec :
+Tu es un expert en trading technique (forex, crypto, actions).
+
+Analyse ce screenshot de graphique TradingView.
+
+1. Identifie si possible :
+- la paire ou l’actif (ex: EUR/USD, BTCUSDT, AAPL)
+- le timeframe (ex: M5, M15, H1, H4)
+
+2. Détermine la direction principale :
+BUY ou SELL
+
+3. Propose :
+- 2 zones possibles de point d’entrée
+- 1 Stop Loss
+- 2 Take Profit (TP1 et TP2)
+
+4. Explique ton raisonnement (support, résistance, tendance, pattern, RSI, EMA, etc.)
+
+Réponds STRICTEMENT au format JSON suivant :
+
 {
+  "marche": "nom du marché ou inconnu",
+  "timeframe": "timeframe ou inconnu",
   "direction": "BUY ou SELL",
-  "entry": "prix",
+  "entrees": ["prix 1", "prix 2"],
   "stop_loss": "prix",
-  "take_profit": "prix",
-  "commentaire": "brève explication"
+  "take_profit": ["tp1", "tp2"],
+  "explication": "analyse claire et pédagogique en français"
 }
+
+Ne mets aucun texte en dehors du JSON.
 """
 
         response = client.chat.completions.create(
@@ -62,6 +83,7 @@ Réponds uniquement en JSON avec :
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
