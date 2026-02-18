@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import base64
@@ -16,28 +17,22 @@ def home():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
-        image_htf = request.files["image_htf"]
-        image_ltf = request.files["image_ltf"]
-
-        image_htf_base64 = base64.b64encode(image_htf.read()).decode("utf-8")
-        image_ltf_base64 = base64.b64encode(image_ltf.read()).decode("utf-8")
+        messages_content = []
 
         prompt = """
 Tu es un expert en trading (forex, crypto, actions).
 
-Analyse deux graphiques :
-- Le premier est un timeframe HAUT (HTF)
-- Le second est un timeframe BAS (LTF)
+Tu peux recevoir soit :
+- un seul graphique
+- ou deux graphiques (HTF = timeframe haut, LTF = timeframe bas)
 
-Donne une analyse complète en français avec ce format EXACT :
+Si un seul graphique est fourni, fais une analyse classique.
+Si deux graphiques sont fournis, fais une analyse multi-timeframe (confluence HTF + LTF).
+
+Donne une analyse en français avec ce format EXACT :
 
 Marché :
-Timeframe haut (HTF) :
-Tendance HTF :
-
-Timeframe bas (LTF) :
-Structure LTF :
-
+Timeframe(s) :
 Direction (BUY ou SELL) :
 
 Zone(s) d’entrée :
@@ -48,29 +43,40 @@ Stop Loss :
 Take Profit :
 - TP1
 - TP2
-- TP3
 
 Analyse :
-Explique la confluence entre HTF et LTF (support, résistance, tendance, pattern, cassure, pullback).
+Explique clairement ton raisonnement (tendance, support/résistance, structure, pattern).
 
 Termine par :
 "Ceci est une analyse automatisée et ne constitue pas un conseil financier."
 """
+
+        messages_content.append({"type": "text", "text": prompt})
+
+        # image HTF si fournie
+        if "image_htf" in request.files and request.files["image_htf"].filename != "":
+            image_htf = request.files["image_htf"]
+            image_htf_base64 = base64.b64encode(image_htf.read()).decode("utf-8")
+            messages_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{image_htf_base64}"}
+            })
+
+        # image LTF si fournie
+        if "image_ltf" in request.files and request.files["image_ltf"].filename != "":
+            image_ltf = request.files["image_ltf"]
+            image_ltf_base64 = base64.b64encode(image_ltf.read()).decode("utf-8")
+            messages_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{image_ltf_base64}"}
+            })
 
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-
-                        {"type": "image_url",
-                         "image_url": {"url": f"data:image/png;base64,{image_htf_base64}"}},
-
-                        {"type": "image_url",
-                         "image_url": {"url": f"data:image/png;base64,{image_ltf_base64}"}}
-                    ]
+                    "content": messages_content
                 }
             ],
             max_tokens=500
@@ -86,6 +92,7 @@ Termine par :
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
