@@ -43,6 +43,7 @@ Stop Loss :
 Take Profit :
 - TP1
 - TP2
+- TP3
 
 Analyse :
 Explique clairement ton raisonnement (tendance, support/résistance, structure, pattern).
@@ -92,6 +93,7 @@ Termine par :
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
