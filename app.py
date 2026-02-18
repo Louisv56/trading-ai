@@ -24,7 +24,7 @@ Tu es un expert en trading (forex, crypto, actions).
 
 Tu peux recevoir soit :
 - un seul graphique
-- ou deux graphiques (HTF = timeframe haut, LTF = timeframe bas)
+- ou deux graphiques (HTF = timeframe haut, LTF = timeframe bas) : l'objectif du LowTimeFrame est de rentrer sur le marché avec le meilleur point d'entrée, Tandis ce que l'image avec la timeframe haute sert uniquement de visualisation global du marché, de confluense avec la LowTimeFrames ect
 
 Si un seul graphique est fourni, fais une analyse classique.
 Si deux graphiques sont fournis, fais une analyse multi-timeframe (confluence HTF + LTF).
@@ -93,6 +93,7 @@ Termine par :
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
