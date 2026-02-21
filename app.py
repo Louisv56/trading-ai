@@ -21,7 +21,7 @@ def analyze():
 
         prompt = """
 Tu es un expert en trading (forex, crypto, actions).
-Tu peux recevoir un ou deux graphiques (HTF et/ou LTF).: l'objectif du LowTimeFrame est de rentrer sur le marché avec le meilleur point d'entrée, Tandis ce que l'image avec la timeframe haute sert uniquement de visualisation global du marché, de confluense avec la LowTimeFrames ect
+Tu peux recevoir un ou deux graphiques (HTF et/ou LTF).
 Analyse le ou les graphiques et réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, dans ce format exact :
 
 {
@@ -80,6 +80,7 @@ Analyse le ou les graphiques et réponds UNIQUEMENT avec un JSON valide, sans te
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
