@@ -23,7 +23,7 @@ WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET")
 PRICE_PREMIUM    = os.getenv("STRIPE_PRICE_PREMIUM")
 PRICE_PRO        = os.getenv("STRIPE_PRICE_PRO")
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://votre-site.com")  # ← remplace par ton URL
+FRONTEND_URL = os.getenv("https://mytradingx.fr/analyse-ia")  # ← remplace par ton URL
 
 app = Flask(__name__)
 CORS(app)
@@ -312,6 +312,7 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
