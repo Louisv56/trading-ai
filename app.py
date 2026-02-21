@@ -20,16 +20,32 @@ def analyze():
         messages_content = []
 
         prompt = """
-Tu es un expert en trading (forex, crypto, actions).
-Tu peux recevoir un ou deux graphiques (HTF et/ou LTF).
-Analyse le ou les graphiques et réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, dans ce format exact :
+Tu es un trader professionnel spécialisé en analyse technique Smart Money Concepts (SMC).
 
+MÉTHODOLOGIE À APPLIQUER :
+- Identifier la structure de marché : Higher High/Higher Low (haussier) ou Lower High/Lower Low (baissier)
+- Repérer les zones institutionnelles : Order Blocks, Fair Value Gaps (FVG), Breaker Blocks
+- Identifier les liquidity pools : Equal Highs/Lows, BSL/SSL (Buy Side / Sell Side Liquidity)
+- Analyser le flux des ordres : BOS (Break of Structure), CHOCH (Change of Character)
+- Sur le LTF (si fourni) : chercher le point d'entrée optimal dans la zone HTF identifiée
+
+ANALYSE REQUISE :
+1. Timeframe analysé et actif détecté si possible
+2. Structure de marché actuelle
+3. Niveaux clés (supports/résistances institutionnels)
+4. Pattern ou setup détecté
+5. Confluences entre HTF et LTF si deux images
+
+Réponds UNIQUEMENT avec ce JSON valide :
 {
-  "direction": "BUY ou SELL",
-  "entrees": ["niveau1", "niveau2"],
-  "stop_loss": "niveau",
-  "take_profit": ["TP1", "TP2", "TP3"],
-  "explication": "Ton analyse complète ici en français. Tendance, structure, support/résistance, pattern. Ceci est une analyse automatisée et ne constitue pas un conseil financier."
+  "direction": "BUY ou SELL ou NEUTRE",
+  "entrees": ["niveau précis 1", "niveau précis 2"],
+  "stop_loss": "niveau précis avec justification courte",
+  "take_profit": ["TP1 - niveau", "TP2 - niveau", "TP3 - niveau"],
+  "ratio_risque_rendement": "ex: 1:3",
+  "confluences": ["confluence 1", "confluence 2"],
+  "invalidation": "condition qui invalide le setup",
+  "explication": "Analyse détaillée en français. Ceci n'est pas un conseil financier."
 }
 """
         messages_content.append({"type": "text", "text": prompt})
@@ -80,6 +96,7 @@ Analyse le ou les graphiques et réponds UNIQUEMENT avec un JSON valide, sans te
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
