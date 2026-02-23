@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import base64
@@ -23,7 +22,7 @@ WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET")
 PRICE_PREMIUM    = os.getenv("STRIPE_PRICE_PREMIUM")
 PRICE_PRO        = os.getenv("STRIPE_PRICE_PRO")
 
-FRONTEND_URL = os.getenv("FRONTEND_URL")  # ← remplace par ton URL
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://votre-site.com")  # ← remplace par ton URL
 
 app = Flask(__name__)
 CORS(app)
@@ -308,10 +307,26 @@ def webhook():
 def home():
     return "API Trading IA active 🚀"
 
+# ── Keep-alive (évite que Render s'endorme) ────────────────────────────────────
+import threading
+import time
+import urllib.request
+
+def keep_alive():
+    while True:
+        time.sleep(840)  # ping toutes les 14 minutes
+        try:
+            urllib.request.urlopen("https://trading-ai-7y8g.onrender.com/")
+        except:
+            pass
+
+thread = threading.Thread(target=keep_alive, daemon=True)
+thread.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
