@@ -170,9 +170,12 @@ Réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après :
   "ratio_risque_rendement": "ex: 1:3",
   "confluences": ["confluence 1", "confluence 2", "confluence 3"],
   "invalidation": "condition qui invalide le setup",
+  "probabilite_succes": 72,
   "explication": "Analyse détaillée en français. Ceci n'est pas un conseil financier."
 }}
-"""
+
+Pour le champ probabilite_succes : donne un entier entre 0 et 100 représentant ta confiance dans le setup basée sur le nombre de confluences, la clarté de la structure, la qualité du risk/reward et la lisibilité du graphique. Sois réaliste : setup moyen = 50-60%, bon setup = 65-75%, excellent setup = 75-85%. Ne dépasse jamais 85% car aucun trade n'est certain.
+"""'
 
         messages_content = [{"type": "text", "text": prompt}]
 
@@ -326,6 +329,7 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
