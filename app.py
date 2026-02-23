@@ -5,6 +5,9 @@ import os
 import json
 import hashlib
 import stripe
+import threading
+import time
+import urllib.request
 from openai import OpenAI
 from supabase import create_client, Client
 from datetime import date
@@ -17,12 +20,11 @@ supabase: Client = create_client(
     os.getenv("SUPABASE_KEY")
 )
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET")
-PRICE_PREMIUM    = os.getenv("STRIPE_PRICE_PREMIUM")
-PRICE_PRO        = os.getenv("STRIPE_PRICE_PRO")
-
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://votre-site.com")  # ← remplace par ton URL
+stripe.api_key  = os.getenv("STRIPE_SECRET_KEY")
+WEBHOOK_SECRET  = os.getenv("STRIPE_WEBHOOK_SECRET")
+PRICE_PREMIUM   = os.getenv("STRIPE_PRICE_PREMIUM")
+PRICE_PRO       = os.getenv("STRIPE_PRICE_PRO")
+FRONTEND_URL    = os.getenv("FRONTEND_URL", "https://votre-site.com")
 
 app = Flask(__name__)
 CORS(app)
@@ -36,7 +38,6 @@ def get_user(email: str):
     return res.data[0] if res.data else None
 
 def reset_counter_if_needed(user: dict):
-    """Remet le compteur à 0 si on est dans un nouveau mois."""
     today = date.today()
     reset_date = date.fromisoformat(str(user["analyses_reset_date"]))
     if today.month != reset_date.month or today.year != reset_date.year:
@@ -51,15 +52,14 @@ def reset_counter_if_needed(user: dict):
 @app.route("/register", methods=["POST"])
 def register():
     try:
-        data = request.get_json()
+        data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
 
         if not email or not password:
             return jsonify({"error": "Email et mot de passe requis"}), 400
-
         if get_user(email):
-            return jsonify({"error": "Email déjà utilisé"}), 400
+            return jsonify({"error": "Email deja utilise"}), 400
 
         supabase.table("users").insert({
             "email": email,
@@ -71,7 +71,7 @@ def register():
 
         user = get_user(email)
         return jsonify({
-            "message": "Inscription réussie",
+            "message": "Inscription reussie",
             "user": {
                 "id": user["id"],
                 "email": user["email"],
@@ -86,7 +86,7 @@ def register():
 @app.route("/login", methods=["POST"])
 def login():
     try:
-        data = request.get_json()
+        data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
 
@@ -96,16 +96,15 @@ def login():
 
         user = reset_counter_if_needed(user)
 
-        # Calcul analyses restantes
         if user["plan"] == "free":
             restantes = max(0, 2 - user["analyses_utilisees"])
         elif user["plan"] == "premium":
             restantes = max(0, 50 - user["analyses_utilisees"])
-        else:  # pro
+        else:
             restantes = 999
 
         return jsonify({
-            "message": "Connexion réussie",
+            "message": "Connexion reussie",
             "user": {
                 "id": user["id"],
                 "email": user["email"],
@@ -125,14 +124,11 @@ def analyze():
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
-        # Vérif identifiants
         user = get_user(email)
         if not user or user["password"] != hash_password(password):
-            return jsonify({"error": "Non autorisé. Connecte-toi."}), 401
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
-        user = reset_counter_if_needed(user)
-
-        # Vérif quota
+        user  = reset_counter_if_needed(user)
         plan  = user["plan"]
         count = user["analyses_utilisees"]
 
@@ -140,42 +136,38 @@ def analyze():
             return jsonify({"error": "LIMIT_REACHED", "plan": "free"}), 403
         if plan == "premium" and count >= 50:
             return jsonify({"error": "LIMIT_REACHED", "plan": "premium"}), 403
-        # pro = illimité
 
-        # Construction du prompt
-        asset     = request.form.get("asset", "non précisé")
-        timeframe = request.form.get("timeframe", "non précisé")
+        asset     = request.form.get("asset", "non precise")
+        timeframe = request.form.get("timeframe", "non precise")
 
-        prompt = f"""
-Tu es un trader professionnel spécialisé en analyse technique Smart Money Concepts (SMC).
-
-CONTEXTE :
-- Actif : {asset}
-- Timeframe principal : {timeframe}
-
-MÉTHODOLOGIE :
-- Structure de marché : Higher High/Higher Low ou Lower High/Lower Low
-- Zones institutionnelles : Order Blocks, Fair Value Gaps (FVG), Breaker Blocks
-- Liquidité : Equal Highs/Lows, BSL/SSL
-- Flux d'ordres : BOS (Break of Structure), CHOCH (Change of Character)
-- Si deux graphiques fournis : analyse multi-timeframe HTF + LTF
-
-Réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après :
-
-{{
-  "direction": "BUY ou SELL ou NEUTRE",
-  "entrees": ["niveau 1", "niveau 2"],
-  "stop_loss": "niveau avec justification courte",
-  "take_profit": ["TP1", "TP2", "TP3"],
-  "ratio_risque_rendement": "ex: 1:3",
-  "confluences": ["confluence 1", "confluence 2", "confluence 3"],
-  "invalidation": "condition qui invalide le setup",
-  "probabilite_succes": 72,
-  "explication": "Analyse détaillée en français. Ceci n'est pas un conseil financier."
-}}
-
-Pour le champ probabilite_succes : donne un entier entre 0 et 100 représentant ta confiance dans le setup basée sur le nombre de confluences, la clarté de la structure, la qualité du risk/reward et la lisibilité du graphique. Sois réaliste : setup moyen = 50-60%, bon setup = 65-75%, excellent setup = 75-85%. Ne dépasse jamais 85% car aucun trade n'est certain.
-"""'
+        prompt = (
+            "Tu es un trader professionnel specialise en analyse technique Smart Money Concepts (SMC).\n\n"
+            "CONTEXTE :\n"
+            "- Actif : " + asset + "\n"
+            "- Timeframe principal : " + timeframe + "\n\n"
+            "METHODOLOGIE :\n"
+            "- Structure de marche : Higher High/Higher Low ou Lower High/Lower Low\n"
+            "- Zones institutionnelles : Order Blocks, Fair Value Gaps (FVG), Breaker Blocks\n"
+            "- Liquidite : Equal Highs/Lows, BSL/SSL\n"
+            "- Flux d ordres : BOS (Break of Structure), CHOCH (Change of Character)\n"
+            "- Si deux graphiques fournis : analyse multi-timeframe HTF + LTF\n\n"
+            "Reponds UNIQUEMENT avec un JSON valide, sans texte avant ni apres :\n\n"
+            "{\n"
+            "  \"direction\": \"BUY ou SELL ou NEUTRE\",\n"
+            "  \"entrees\": [\"niveau 1\", \"niveau 2\"],\n"
+            "  \"stop_loss\": \"niveau avec justification courte\",\n"
+            "  \"take_profit\": [\"TP1\", \"TP2\", \"TP3\"],\n"
+            "  \"ratio_risque_rendement\": \"ex: 1:3\",\n"
+            "  \"confluences\": [\"confluence 1\", \"confluence 2\", \"confluence 3\"],\n"
+            "  \"invalidation\": \"condition qui invalide le setup\",\n"
+            "  \"probabilite_succes\": 72,\n"
+            "  \"explication\": \"Analyse detaillee en francais. Ceci n est pas un conseil financier.\"\n"
+            "}\n\n"
+            "Pour probabilite_succes : entier entre 0 et 100 base sur les confluences, "
+            "la clarte de la structure et la qualite du R/R. "
+            "Setup moyen = 50-60%, bon setup = 65-75%, excellent = 75-85%. "
+            "Ne depasse jamais 85% car aucun trade n est certain."
+        )
 
         messages_content = [{"type": "text", "text": prompt}]
 
@@ -183,14 +175,14 @@ Pour le champ probabilite_succes : donne un entier entre 0 et 100 représentant 
             img = request.files["image_htf"].read()
             messages_content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(img).decode()}"}
+                "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}
             })
 
         if "image_ltf" in request.files and request.files["image_ltf"].filename != "":
             img = request.files["image_ltf"].read()
             messages_content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(img).decode()}"}
+                "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}
             })
 
         response = openai_client.chat.completions.create(
@@ -208,12 +200,10 @@ Pour le champ probabilite_succes : donne un entier entre 0 et 100 représentant 
 
         result = json.loads(raw)
 
-        # Incrément compteur
         supabase.table("users").update({
             "analyses_utilisees": count + 1
         }).eq("id", user["id"]).execute()
 
-        # Infos restantes dans la réponse
         if plan == "free":
             result["analyses_restantes"] = max(0, 2 - (count + 1))
         elif plan == "premium":
@@ -234,14 +224,13 @@ def create_checkout():
     try:
         data  = request.get_json()
         email = data.get("email", "").strip().lower()
-        plan  = data.get("plan")  # "premium" ou "pro"
+        plan  = data.get("plan")
 
         if plan not in ["premium", "pro"]:
             return jsonify({"error": "Plan invalide"}), 400
 
         price_id = PRICE_PREMIUM if plan == "premium" else PRICE_PRO
 
-        # Crée ou récupère le customer Stripe
         user = get_user(email)
         if user and user.get("stripe_customer_id"):
             customer_id = user["stripe_customer_id"]
@@ -258,8 +247,8 @@ def create_checkout():
             payment_method_types=["card"],
             line_items=[{"price": price_id, "quantity": 1}],
             mode="subscription",
-            success_url=f"{FRONTEND_URL}?payment=success&plan={plan}",
-            cancel_url=f"{FRONTEND_URL}?payment=cancelled",
+            success_url=FRONTEND_URL + "?payment=success&plan=" + plan,
+            cancel_url=FRONTEND_URL + "?payment=cancelled",
             metadata={"email": email, "plan": plan}
         )
 
@@ -310,14 +299,11 @@ def webhook():
 def home():
     return "API Trading IA active 🚀"
 
-# ── Keep-alive (évite que Render s'endorme) ────────────────────────────────────
-import threading
-import time
-import urllib.request
 
+# ── Keep-alive ────────────────────────────────────────────────────────────────
 def keep_alive():
     while True:
-        time.sleep(840)  # ping toutes les 14 minutes
+        time.sleep(840)
         try:
             urllib.request.urlopen("https://trading-ai-7y8g.onrender.com/")
         except:
@@ -326,9 +312,11 @@ def keep_alive():
 thread = threading.Thread(target=keep_alive, daemon=True)
 thread.start()
 
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
