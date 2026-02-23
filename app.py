@@ -212,6 +212,20 @@ def analyze():
             result["analyses_restantes"] = 999
 
         result["plan"] = plan
+
+        # Pastille probabilite - calcul cote serveur
+        score = result.get("probabilite_succes", 0)
+        if isinstance(score, int) or isinstance(score, float):
+            if score >= 70:
+                result["proba_couleur"] = "#22c55e"
+                result["proba_label"] = "Haute probabilite"
+            elif score >= 50:
+                result["proba_couleur"] = "#f97316"
+                result["proba_label"] = "Probabilite neutre"
+            else:
+                result["proba_couleur"] = "#ef4444"
+                result["proba_label"] = "Faible probabilite"
+
         return jsonify(result)
 
     except Exception as e:
@@ -316,6 +330,7 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
