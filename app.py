@@ -308,6 +308,31 @@ def webhook():
     return jsonify({"status": "ok"})
 
 
+
+# ── Cancel Subscription ───────────────────────────────────────────────────────
+@app.route("/cancel-subscription", methods=["POST"])
+def cancel_subscription():
+    try:
+        data     = request.get_json()
+        email    = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+
+        user = get_user(email)
+        if not user or user["password"] != hash_password(password):
+            return jsonify({"error": "Non autorise"}), 401
+
+        sub_id = user.get("stripe_subscription_id")
+        if not sub_id:
+            return jsonify({"error": "Aucun abonnement actif trouve"}), 400
+
+        # Resiliation a la fin de la periode en cours (pas immediate)
+        stripe.Subscription.modify(sub_id, cancel_at_period_end=True)
+
+        return jsonify({"message": "Resiliation confirmee. Votre acces reste actif jusqu a la fin de la periode en cours."})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Home ──────────────────────────────────────────────────────────────────────
 @app.route("/")
 def home():
@@ -330,6 +355,7 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
