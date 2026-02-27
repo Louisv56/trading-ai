@@ -96,12 +96,23 @@ def clean_json(raw: str) -> dict:
             raw = raw[4:]
     return json.loads(raw.strip())
 
+def get_mime_type(img_bytes):
+    if img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        return "image/png"
+    elif img_bytes[:3] == b'\xff\xd8\xff':
+        return "image/jpeg"
+    elif img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+        return "image/webp"
+    else:
+        return "image/png"
+
 def call_openai(model_id, prompt, images):
     messages_content = [{"type": "text", "text": prompt}]
     for img_bytes in images:
+        mime = get_mime_type(img_bytes)
         messages_content.append({
             "type": "image_url",
-            "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode()}
+            "image_url": {"url": "data:" + mime + ";base64," + base64.b64encode(img_bytes).decode()}
         })
     response = openai_client.chat.completions.create(
         model=model_id,
@@ -113,11 +124,12 @@ def call_openai(model_id, prompt, images):
 def call_claude(prompt, images):
     content = []
     for img_bytes in images:
+        mime = get_mime_type(img_bytes)
         content.append({
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": "image/jpeg",
+                "media_type": mime,
                 "data": base64.b64encode(img_bytes).decode()
             }
         })
@@ -133,8 +145,9 @@ def call_gemini(prompt, images):
     model = genai.GenerativeModel("gemini-1.5-pro")
     parts = []
     for img_bytes in images:
+        mime = get_mime_type(img_bytes)
         parts.append({
-            "mime_type": "image/jpeg",
+            "mime_type": mime,
             "data": base64.b64encode(img_bytes).decode()
         })
     parts.append(prompt)
@@ -377,6 +390,7 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
