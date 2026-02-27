@@ -36,8 +36,8 @@ CORS(app)
 # ── Modeles autorises par plan ────────────────────────────────────────────────
 MODELS_BY_PLAN = {
     "free":    ["gpt-4o-mini"],
-    "premium": ["gpt-4o-mini", "gpt-4o", "claude"],
-    "pro":     ["gpt-4o-mini", "gpt-4o", "claude", "gemini"]
+    "premium": ["gpt-4o-mini", "gpt-4o", "gemini"],
+    "pro":     ["gpt-4o-mini", "gpt-4o", "gemini", "claude"]
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
