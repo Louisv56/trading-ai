@@ -1,7 +1,8 @@
 flask
 flask-cors
 openai
+anthropic
+google-generativeai
 pillow
 supabase
 stripe
-
