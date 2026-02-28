@@ -142,7 +142,7 @@ def call_claude(prompt, images):
     return clean_json(response.content[0].text)
 
 def call_gemini(prompt, images):
-    model = genai.GenerativeModel("gemini-1.5-pro")
+    model = genai.GenerativeModel("gemini-2.0-flash")
     parts = []
     for img_bytes in images:
         mime = get_mime_type(img_bytes)
