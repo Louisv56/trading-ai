@@ -142,7 +142,7 @@ def call_claude(prompt, images):
     return clean_json(response.content[0].text)
 
 def call_gemini(prompt, images):
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     parts = []
     for img_bytes in images:
         mime = get_mime_type(img_bytes)
@@ -390,6 +390,7 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
 
