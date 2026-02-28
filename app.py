@@ -369,6 +369,114 @@ def webhook():
     return jsonify({"status": "ok"})
 
 
+
+# ── Analyse Fondamentale (Pro uniquement) ─────────────────────────────────────
+@app.route("/fundamental", methods=["POST"])
+def fundamental():
+    try:
+        import requests as req
+
+        data     = request.get_json()
+        email    = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+        asset    = data.get("asset", "").strip()
+
+        if not asset:
+            return jsonify({"error": "Precise un actif (ex: BTC, EURUSD, Gold)"}), 400
+
+        user = get_user(email)
+        if not user or user["password"] != hash_password(password):
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
+
+        if user["plan"] != "pro":
+            return jsonify({"error": "PRO_ONLY"}), 403
+
+        FINNHUB_KEY = os.getenv("FINNHUB_API_KEY")
+
+        keywords = [asset.lower(), asset.upper()]
+        extra_kw = {
+            "BTC": ["bitcoin", "crypto", "btc"],
+            "ETH": ["ethereum", "eth", "crypto"],
+            "GOLD": ["gold", "xau", "metaux"],
+            "EURUSD": ["euro", "eur", "usd", "dollar", "fed", "bce"],
+            "SP500": ["sp500", "s&p", "wall street", "fed"],
+            "OIL": ["oil", "petrole", "opec", "brent", "wti"],
+        }
+        for k, v in extra_kw.items():
+            if asset.upper() == k:
+                keywords.extend(v)
+
+        news_url  = "https://finnhub.io/api/v1/news?category=general&token=" + FINNHUB_KEY
+        news_resp = req.get(news_url, timeout=10)
+        all_news  = news_resp.json() if news_resp.status_code == 200 else []
+
+        relevant_news = []
+        for n in all_news[:100]:
+            headline = (n.get("headline", "") + " " + n.get("summary", "")).lower()
+            if any(kw in headline for kw in keywords):
+                relevant_news.append({
+                    "titre":  n.get("headline", ""),
+                    "resume": n.get("summary", "")[:200]
+                })
+            if len(relevant_news) >= 8:
+                break
+
+        if len(relevant_news) < 3:
+            for n in all_news[:8]:
+                relevant_news.append({
+                    "titre":  n.get("headline", ""),
+                    "resume": n.get("summary", "")[:200]
+                })
+
+        news_text = ""
+        for i, n in enumerate(relevant_news[:8]):
+            news_text += str(i+1) + ". " + n["titre"] + "\n"
+            if n["resume"]:
+                news_text += "   " + n["resume"] + "\n"
+
+        prompt = (
+            "Tu es un analyste financier professionnel specialise en analyse fondamentale.\n\n"
+            "ACTIF ANALYSE : " + asset.upper() + "\n\n"
+            "ACTUALITES DU JOUR :\n" + news_text + "\n\n"
+            "Analyse le sentiment du marche pour " + asset.upper() + " base sur ces actualites.\n\n"
+            "Reponds UNIQUEMENT avec un JSON valide sans texte avant ni apres :\n"
+            "{\n"
+            "  \"sentiment\": \"HAUSSIER ou BAISSIER ou NEUTRE\",\n"
+            "  \"confiance\": 72,\n"
+            "  \"resume\": \"Resume en 2 phrases du contexte fondamental actuel\",\n"
+            "  \"news_cles\": [\n"
+            "    {\"titre\": \"titre court\", \"impact\": \"POSITIF ou NEGATIF ou NEUTRE\", \"explication\": \"explication courte\"},\n"
+            "    {\"titre\": \"titre court\", \"impact\": \"POSITIF ou NEGATIF ou NEUTRE\", \"explication\": \"explication courte\"},\n"
+            "    {\"titre\": \"titre court\", \"impact\": \"POSITIF ou NEGATIF ou NEUTRE\", \"explication\": \"explication courte\"}\n"
+            "  ],\n"
+            "  \"facteurs_surveillance\": [\"facteur 1\", \"facteur 2\", \"facteur 3\"],\n"
+            "  \"conclusion\": \"Conclusion detaillee sur le contexte fondamental et ses implications. Ceci n est pas un conseil financier.\"\n"
+            "}"
+        )
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000
+        )
+
+        result = clean_json(response.choices[0].message.content)
+        result["actif"]   = asset.upper()
+        result["nb_news"] = len(relevant_news)
+
+        s = result.get("sentiment", "NEUTRE")
+        if s == "HAUSSIER":
+            result["sentiment_couleur"] = "#22c55e"
+        elif s == "BAISSIER":
+            result["sentiment_couleur"] = "#ef4444"
+        else:
+            result["sentiment_couleur"] = "#f97316"
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Home ──────────────────────────────────────────────────────────────────────
 @app.route("/")
 def home():
