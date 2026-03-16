@@ -8,6 +8,7 @@ import stripe
 import threading
 import time
 import urllib.request
+import urllib.parse
 from openai import OpenAI
 from anthropic import Anthropic
 import google.generativeai as genai
@@ -30,8 +31,27 @@ PRICE_PREMIUM   = os.getenv("STRIPE_PRICE_PREMIUM")
 PRICE_PRO       = os.getenv("STRIPE_PRICE_PRO")
 FRONTEND_URL    = os.getenv("FRONTEND_URL", "https://votre-site.com")
 
+GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v2/userinfo"
+
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": [
+    "https://mytradingx.fr",
+    "https://www.mytradingx.fr",
+    "http://localhost",
+    "http://127.0.0.1"
+]}}, supports_credentials=True)
+
+@app.after_request
+def after_request(response):
+    origin = request.headers.get("Origin", "")
+    if origin in ["https://mytradingx.fr", "https://www.mytradingx.fr"]:
+        response.headers["Access-Control-Allow-Origin"]  = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 # ── Modeles autorises par plan ────────────────────────────────────────────────
 MODELS_BY_PLAN = {
@@ -155,8 +175,9 @@ def call_gemini(prompt, images):
     return clean_json(response.text)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-@app.route("/register", methods=["POST"])
+@app.route("/register", methods=["POST", "OPTIONS"])
 def register():
+    if request.method == "OPTIONS": return "", 204
     try:
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
@@ -181,8 +202,9 @@ def register():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["POST", "OPTIONS"])
 def login():
+    if request.method == "OPTIONS": return "", 204
     try:
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
@@ -209,16 +231,95 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Google OAuth ─────────────────────────────────────────────────────────────
+@app.route("/auth/google/callback", methods=["POST", "OPTIONS"])
+def google_callback():
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        import requests as req_lib
+        data = request.get_json()
+        code         = data.get("code", "")
+        redirect_uri = data.get("redirect_uri", FRONTEND_URL + "/login.html")
+        if not code:
+            return jsonify({"error": "Code manquant"}), 400
+
+        # 1. Echanger le code contre un access_token
+        token_resp = req_lib.post(GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code"
+        }, timeout=10)
+        token_json   = token_resp.json()
+        access_token = token_json.get("access_token")
+        if not access_token:
+            err_desc = token_json.get("error_description", token_json.get("error", "Token Google invalide"))
+            return jsonify({"error": err_desc}), 400
+
+        # 2. Recuperer les infos utilisateur Google
+        info_resp = req_lib.get(GOOGLE_USERINFO_URL,
+            headers={"Authorization": "Bearer " + access_token}, timeout=10)
+        info      = info_resp.json()
+        email     = info.get("email", "").strip().lower()
+        if not email:
+            return jsonify({"error": "Email Google introuvable"}), 400
+
+        # 3. Creer ou recuperer l'utilisateur
+        user = get_user(email)
+        if not user:
+            # Inscription automatique via Google
+            google_password = "GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16]
+            supabase.table("users").insert({
+                "email":                email,
+                "password":             hash_password(google_password),
+                "plan":                 "free",
+                "analyses_utilisees":   0,
+                "analyses_reset_date":  date.today().isoformat()
+            }).execute()
+            user = get_user(email)
+
+        user = reset_counter_if_needed(user)
+
+        if user["plan"] == "free":
+            restantes = max(0, 2 - user["analyses_utilisees"])
+        elif user["plan"] == "premium":
+            restantes = max(0, 50 - user["analyses_utilisees"])
+        else:
+            restantes = 999
+
+        return jsonify({
+            "message": "Connexion Google reussie",
+            "user": {
+                "id":                  user["id"],
+                "email":               user["email"],
+                "plan":                user["plan"],
+                "analyses_utilisees":  user["analyses_utilisees"],
+                "analyses_restantes":  restantes,
+                "modeles_disponibles": MODELS_BY_PLAN.get(user["plan"], ["gpt-4o-mini"]),
+                "google_auth":         True
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Analyse ───────────────────────────────────────────────────────────────────
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
+    if request.method == "OPTIONS": return "", 204
     try:
         email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         model    = request.form.get("model", "gpt-4o-mini")
 
         user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        if not user:
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
+        # Support Google Auth : le frontend envoie "GOOGLE_AUTH" comme password
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         user  = reset_counter_if_needed(user)
@@ -292,14 +393,18 @@ def analyze():
 
 
 # ── Cancel Subscription ───────────────────────────────────────────────────────
-@app.route("/cancel-subscription", methods=["POST"])
+@app.route("/cancel-subscription", methods=["POST", "OPTIONS"])
 def cancel_subscription():
+    if request.method == "OPTIONS": return "", 204
     try:
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
         user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        if not user:
+            return jsonify({"error": "Non autorise"}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
             return jsonify({"error": "Non autorise"}), 401
         sub_id = user.get("stripe_subscription_id")
         if not sub_id:
@@ -311,8 +416,9 @@ def cancel_subscription():
 
 
 # ── Stripe Checkout ───────────────────────────────────────────────────────────
-@app.route("/create-checkout", methods=["POST"])
+@app.route("/create-checkout", methods=["POST", "OPTIONS"])
 def create_checkout():
+    if request.method == "OPTIONS": return "", 204
     try:
         data  = request.get_json()
         email = data.get("email", "").strip().lower()
@@ -343,7 +449,7 @@ def create_checkout():
 
 
 # ── Stripe Webhook ────────────────────────────────────────────────────────────
-@app.route("/webhook", methods=["POST"])
+@app.route("/webhook", methods=["POST", "OPTIONS"])
 def webhook():
     payload = request.data
     sig     = request.headers.get("Stripe-Signature")
@@ -371,8 +477,9 @@ def webhook():
 
 
 # ── Analyse Fondamentale (Pro uniquement) ─────────────────────────────────────
-@app.route("/fundamental", methods=["POST"])
+@app.route("/fundamental", methods=["POST", "OPTIONS"])
 def fundamental():
+    if request.method == "OPTIONS": return "", 204
     try:
         import requests as req
 
@@ -385,7 +492,10 @@ def fundamental():
             return jsonify({"error": "Precise un actif (ex: BTC, EURUSD, Gold)"}), 400
 
         user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        if not user:
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         if user["plan"] != "pro":
@@ -498,7 +608,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
 
 
