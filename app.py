@@ -323,7 +323,10 @@ def analyze():
         model    = request.form.get("model", "gpt-4o-mini")
 
         user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        if not user:
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         user  = reset_counter_if_needed(user)
@@ -704,7 +707,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
 
 
