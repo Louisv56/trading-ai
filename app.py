@@ -237,7 +237,6 @@ def google_callback():
     if request.method == "OPTIONS":
         return "", 204
     try:
-        import requests as req_lib
         data = request.get_json()
         code         = data.get("code", "")
         redirect_uri = data.get("redirect_uri", FRONTEND_URL + "/login.html")
@@ -245,23 +244,32 @@ def google_callback():
             return jsonify({"error": "Code manquant"}), 400
 
         # 1. Echanger le code contre un access_token
-        token_resp = req_lib.post(GOOGLE_TOKEN_URL, data={
+        token_data = urllib.parse.urlencode({
             "code":          code,
             "client_id":     GOOGLE_CLIENT_ID,
             "client_secret": GOOGLE_CLIENT_SECRET,
             "redirect_uri":  redirect_uri,
             "grant_type":    "authorization_code"
-        }, timeout=10)
-        token_json   = token_resp.json()
+        }).encode()
+
+        token_req = urllib.request.Request(
+            GOOGLE_TOKEN_URL,
+            data=token_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+        token_resp = urllib.request.urlopen(token_req)
+        token_json = json.loads(token_resp.read().decode())
         access_token = token_json.get("access_token")
         if not access_token:
-            err_desc = token_json.get("error_description", token_json.get("error", "Token Google invalide"))
-            return jsonify({"error": err_desc}), 400
+            return jsonify({"error": "Token Google invalide"}), 400
 
         # 2. Recuperer les infos utilisateur Google
-        info_resp = req_lib.get(GOOGLE_USERINFO_URL,
-            headers={"Authorization": "Bearer " + access_token}, timeout=10)
-        info      = info_resp.json()
+        info_req  = urllib.request.Request(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": "Bearer " + access_token}
+        )
+        info_resp = urllib.request.urlopen(info_req)
+        info      = json.loads(info_resp.read().decode())
         email     = info.get("email", "").strip().lower()
         if not email:
             return jsonify({"error": "Email Google introuvable"}), 400
@@ -315,11 +323,7 @@ def analyze():
         model    = request.form.get("model", "gpt-4o-mini")
 
         user = get_user(email)
-        if not user:
-            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
-        # Support Google Auth : le frontend envoie "GOOGLE_AUTH" comme password
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+        if not user or user["password"] != hash_password(password):
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         user  = reset_counter_if_needed(user)
@@ -401,10 +405,7 @@ def cancel_subscription():
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
         user = get_user(email)
-        if not user:
-            return jsonify({"error": "Non autorise"}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+        if not user or user["password"] != hash_password(password):
             return jsonify({"error": "Non autorise"}), 401
         sub_id = user.get("stripe_subscription_id")
         if not sub_id:
@@ -492,10 +493,7 @@ def fundamental():
             return jsonify({"error": "Precise un actif (ex: BTC, EURUSD, Gold)"}), 400
 
         user = get_user(email)
-        if not user:
-            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+        if not user or user["password"] != hash_password(password):
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         if user["plan"] != "pro":
@@ -586,6 +584,104 @@ def fundamental():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ── Historique — Sauvegarder une analyse ─────────────────────────────────────
+@app.route("/save-analysis", methods=["POST", "OPTIONS"])
+def save_analysis():
+    if request.method == "OPTIONS": return "", 204
+    try:
+        data     = request.get_json()
+        email    = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "Non autorise"}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+            return jsonify({"error": "Non autorise"}), 401
+
+        entrees     = data.get("entrees", "")
+        take_profit = data.get("take_profit", "")
+        if isinstance(entrees, list):     entrees     = " / ".join(entrees)
+        if isinstance(take_profit, list): take_profit = " / ".join(take_profit)
+
+        supabase.table("analyses").insert({
+            "user_email":  email,
+            "asset":       data.get("asset", ""),
+            "timeframe":   data.get("timeframe", ""),
+            "modele":      data.get("modele", ""),
+            "direction":   data.get("direction", ""),
+            "entrees":     entrees,
+            "stop_loss":   data.get("stop_loss", ""),
+            "take_profit": take_profit,
+            "probabilite": data.get("probabilite", None),
+            "explication": data.get("explication", ""),
+            "trade_result": None,
+            "trade_note":  ""
+        }).execute()
+        return jsonify({"message": "Analyse sauvegardee"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Historique — Récupérer les analyses ──────────────────────────────────────
+@app.route("/get-history", methods=["POST", "OPTIONS"])
+def get_history():
+    if request.method == "OPTIONS": return "", 204
+    try:
+        data     = request.get_json()
+        email    = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "Non autorise"}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+            return jsonify({"error": "Non autorise"}), 401
+
+        res = supabase.table("analyses") \
+            .select("*") \
+            .eq("user_email", email) \
+            .order("created_at", desc=True) \
+            .limit(50) \
+            .execute()
+        return jsonify({"analyses": res.data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Historique — Mettre à jour le résultat d'un trade ────────────────────────
+@app.route("/update-trade-result", methods=["POST", "OPTIONS"])
+def update_trade_result():
+    if request.method == "OPTIONS": return "", 204
+    try:
+        data      = request.get_json()
+        email     = data.get("email", "").strip().lower()
+        password  = data.get("password", "")
+        analysis_id = data.get("id")
+        result    = data.get("trade_result")  # "win" | "loss" | "skip" | null
+        note      = data.get("trade_note", "")
+
+        user = get_user(email)
+        if not user:
+            return jsonify({"error": "Non autorise"}), 401
+        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+            return jsonify({"error": "Non autorise"}), 401
+
+        # Vérifier que l'analyse appartient bien à cet utilisateur
+        check = supabase.table("analyses").select("id").eq("id", analysis_id).eq("user_email", email).execute()
+        if not check.data:
+            return jsonify({"error": "Analyse introuvable"}), 404
+
+        supabase.table("analyses").update({
+            "trade_result": result,
+            "trade_note":   note
+        }).eq("id", analysis_id).execute()
+        return jsonify({"message": "Resultat mis a jour"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 @app.route("/")
