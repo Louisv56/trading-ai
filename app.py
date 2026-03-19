@@ -323,10 +323,7 @@ def analyze():
         model    = request.form.get("model", "gpt-4o-mini")
 
         user = get_user(email)
-        if not user:
-            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
+        if not user or user["password"] != hash_password(password):
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         user  = reset_counter_if_needed(user)
@@ -608,7 +605,7 @@ def save_analysis():
         if isinstance(entrees, list):     entrees     = " / ".join(entrees)
         if isinstance(take_profit, list): take_profit = " / ".join(take_profit)
 
-        supabase.table("analyses").insert({
+        result = supabase.table("analyses").insert({
             "user_email":  email,
             "asset":       data.get("asset", ""),
             "timeframe":   data.get("timeframe", ""),
@@ -622,7 +619,8 @@ def save_analysis():
             "trade_result": None,
             "trade_note":  ""
         }).execute()
-        return jsonify({"message": "Analyse sauvegardee"})
+        saved_id = result.data[0]["id"] if result.data else None
+        return jsonify({"message": "Analyse sauvegardee", "id": saved_id})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
