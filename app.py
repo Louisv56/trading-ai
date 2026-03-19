@@ -64,6 +64,16 @@ MODELS_BY_PLAN = {
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
+def check_auth(email: str, password: str):
+    """Retourne l'utilisateur si auth valide (email+password OU Google), sinon None."""
+    user = get_user(email)
+    if not user:
+        return None
+    google_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
+    if user["password"] == hash_password(password) or user["password"] == google_hash:
+        return user
+    return None
+
 def get_user(email: str):
     res = supabase.table("users").select("*").eq("email", email).execute()
     return res.data[0] if res.data else None
@@ -322,8 +332,8 @@ def analyze():
         password = request.form.get("password", "")
         model    = request.form.get("model", "gpt-4o-mini")
 
-        user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        user = check_auth(email, password)
+        if not user:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         user  = reset_counter_if_needed(user)
@@ -404,9 +414,9 @@ def cancel_subscription():
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
-        user = get_user(email)
-        if not user or user["password"] != hash_password(password):
-            return jsonify({"error": "Non autorise"}), 401
+        user = check_auth(email, password)
+        if not user:
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
         sub_id = user.get("stripe_subscription_id")
         if not sub_id:
             return jsonify({"error": "Aucun abonnement actif trouve"}), 400
@@ -492,8 +502,8 @@ def fundamental():
         if not asset:
             return jsonify({"error": "Precise un actif (ex: BTC, EURUSD, Gold)"}), 400
 
-        user = get_user(email)
-        if not user or user["password"] != hash_password(password):
+        user = check_auth(email, password)
+        if not user:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         if user["plan"] != "pro":
@@ -593,12 +603,9 @@ def save_analysis():
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
-        user = get_user(email)
+        user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Non autorise"}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
-            return jsonify({"error": "Non autorise"}), 401
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         entrees     = data.get("entrees", "")
         take_profit = data.get("take_profit", "")
@@ -633,12 +640,9 @@ def get_history():
         data     = request.get_json()
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
-        user = get_user(email)
+        user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Non autorise"}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
-            return jsonify({"error": "Non autorise"}), 401
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         res = supabase.table("analyses") \
             .select("*") \
@@ -663,12 +667,9 @@ def update_trade_result():
         result    = data.get("trade_result")  # "win" | "loss" | "skip" | null
         note      = data.get("trade_note", "")
 
-        user = get_user(email)
+        user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Non autorise"}), 401
-        google_password_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-        if user["password"] != hash_password(password) and user["password"] != google_password_hash:
-            return jsonify({"error": "Non autorise"}), 401
+            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
         # Vérifier que l'analyse appartient bien à cet utilisateur
         check = supabase.table("analyses").select("id").eq("id", analysis_id).eq("user_email", email).execute()
@@ -705,7 +706,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
 
 
