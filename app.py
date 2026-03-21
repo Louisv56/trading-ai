@@ -69,8 +69,17 @@ def check_auth(email: str, password: str):
     user = get_user(email)
     if not user:
         return None
-    google_hash = hash_password("GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16])
-    if user["password"] == hash_password(password) or user["password"] == google_hash:
+    # Cas 1 : mot de passe classique hashé
+    if user["password"] == hash_password(password):
+        return user
+    # Cas 2 : Google Auth — le frontend envoie déjà "GOOGLE_OAUTH_xxxx" en clair
+    # Le backend l'a stocké hashé, donc on compare hash(password_reçu) avec ce qui est en base
+    if password.startswith("GOOGLE_OAUTH_") and user["password"] == hash_password(password):
+        return user
+    # Cas 3 : recalcul du hash Google à partir de l'email (compatibilité)
+    google_pwd   = "GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16]
+    google_hash  = hash_password(google_pwd)
+    if user["password"] == google_hash:
         return user
     return None
 
@@ -706,7 +715,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
 
 
