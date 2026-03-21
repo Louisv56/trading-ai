@@ -605,39 +605,45 @@ def fundamental():
         return jsonify({"error": str(e)}), 500
 
 # ── Historique — Sauvegarder une analyse ─────────────────────────────────────
-@app.route("/save-analysis", methods=["POST", "OPTIONS"])
+@app.route("/save-analysis", methods=["POST"])
 def save_analysis():
-    if request.method == "OPTIONS": return "", 204
     try:
-        data     = request.get_json()
-        email    = data.get("email", "").strip().lower()
-        password = data.get("password", "")
+        data = request.json
+        email = data.get("user_email")
+        password = data.get("password")
+
         user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Non autorise. Connecte-toi."}), 401
+            return jsonify({"error": "Non autorise"}), 401
 
-        entrees     = data.get("entrees", "")
-        take_profit = data.get("take_profit", "")
-        if isinstance(entrees, list):     entrees     = " / ".join(entrees)
-        if isinstance(take_profit, list): take_profit = " / ".join(take_profit)
+        # NETTOYAGE DE LA PROBABILITÉ
+        raw_proba = str(data.get("probabilite", "0"))
+        # On ne garde que les chiffres (enlève le % et le texte)
+        clean_proba = "".join(filter(str.isdigit, raw_proba))
+        proba_int = int(clean_proba) if clean_proba else 0
 
-        result = supabase.table("analyses").insert({
-            "user_email":  email,
-            "asset":       data.get("asset", ""),
-            "timeframe":   data.get("timeframe", ""),
-            "modele":      data.get("modele", ""),
-            "direction":   data.get("direction", ""),
-            "entrees":     entrees,
-            "stop_loss":   data.get("stop_loss", ""),
-            "take_profit": take_profit,
-            "probabilite": data.get("probabilite", None),
-            "explication": data.get("explication", ""),
-            "trade_result": None,
-            "trade_note":  ""
+        # INSERTION
+        res = supabase.table("analyses").insert({
+            "user_email":   email,
+            "asset":        data.get("asset"),
+            "timeframe":    data.get("timeframe"),
+            "modele":       data.get("modele"),
+            "direction":    data.get("direction"),
+            "entrees":      str(data.get("entrees")),
+            "stop_loss":    str(data.get("stop_loss")),
+            "take_profit":  str(data.get("take_profit")),
+            "probabilite":  proba_int, # On envoie le chiffre propre
+            "explication":  data.get("explication")
         }).execute()
-        saved_id = result.data[0]["id"] if result.data else None
-        return jsonify({"message": "Analyse sauvegardee", "id": saved_id})
+
+        # Vérification si l'insertion a renvoyé des données
+        if not res.data:
+            return jsonify({"error": "Echec insertion Supabase (RLS ?)"}), 500
+
+        return jsonify({"message": "Analyse enregistree", "id": res.data[0]["id"]})
+    
     except Exception as e:
+        print(f"ERREUR SERVEUR: {str(e)}") # Ceci s'affichera dans tes logs Render
         return jsonify({"error": str(e)}), 500
 
 
