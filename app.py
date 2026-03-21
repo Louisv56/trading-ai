@@ -609,42 +609,39 @@ def fundamental():
 def save_analysis():
     try:
         data = request.json
+        print(f"DEBUG: Données reçues -> {data}") # On voit ce qui arrive dans les logs Render
+
         email = data.get("user_email")
         password = data.get("password")
 
+        # Vérification simple de l'utilisateur
         user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Non autorise"}), 401
+            return jsonify({"error": "Session expirée, reconnectez-vous"}), 401
 
-        # NETTOYAGE DE LA PROBABILITÉ
-        raw_proba = str(data.get("probabilite", "0"))
-        # On ne garde que les chiffres (enlève le % et le texte)
-        clean_proba = "".join(filter(str.isdigit, raw_proba))
-        proba_int = int(clean_proba) if clean_proba else 0
+        # On prépare l'insertion en forçant tout en TEXTE (str)
+        # Sauf l'email qui est déjà du texte
+        row_to_insert = {
+            "user_email":   str(email),
+            "asset":        str(data.get("asset", "Inconnu")),
+            "timeframe":    str(data.get("timeframe", "-")),
+            "modele":       str(data.get("modele", "-")),
+            "direction":    str(data.get("direction", "-")),
+            "entrees":      str(data.get("entrees", "-")),
+            "stop_loss":    str(data.get("stop_loss", "-")),
+            "take_profit":  str(data.get("take_profit", "-")),
+            "probabilite":  str(data.get("probabilite", "0")), # Forcé en texte
+            "explication":  str(data.get("explication", ""))
+        }
 
-        # INSERTION
-        res = supabase.table("analyses").insert({
-            "user_email":   email,
-            "asset":        data.get("asset"),
-            "timeframe":    data.get("timeframe"),
-            "modele":       data.get("modele"),
-            "direction":    data.get("direction"),
-            "entrees":      str(data.get("entrees")),
-            "stop_loss":    str(data.get("stop_loss")),
-            "take_profit":  str(data.get("take_profit")),
-            "probabilite":  proba_int, # On envoie le chiffre propre
-            "explication":  data.get("explication")
-        }).execute()
+        print(f"DEBUG: Tentative insertion Supabase...")
+        res = supabase.table("analyses").insert(row_to_insert).execute()
+        
+        return jsonify({"message": "Analyse enregistrée !", "id": res.data[0]["id"]})
 
-        # Vérification si l'insertion a renvoyé des données
-        if not res.data:
-            return jsonify({"error": "Echec insertion Supabase (RLS ?)"}), 500
-
-        return jsonify({"message": "Analyse enregistree", "id": res.data[0]["id"]})
-    
     except Exception as e:
-        print(f"ERREUR SERVEUR: {str(e)}") # Ceci s'affichera dans tes logs Render
-        return jsonify({"error": str(e)}), 500
+        print(f"ERREUR CRITIQUE SERVEUR: {str(e)}") # Très important pour débugger sur Render
+        return jsonify({"error": "Erreur interne au serveur"}), 500
 
 
 # ── Historique — Récupérer les analyses ──────────────────────────────────────
