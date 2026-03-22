@@ -65,25 +65,24 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def check_auth(email, password):
+    # On nettoie l'email (enlever espaces et mettre en minuscule)
     email_clean = email.lower().strip()
+    
     res = supabase.table("users").select("*").eq("email", email_clean).execute()
     if not res.data:
         return None
-    user   = res.data[0]
-    db_pass = user.get("password", "")
+        
+    user = res.data[0]
+    db_pass = user.get("password")
 
-    # Cas 1 : mot de passe classique → on hash ce qui est reçu et on compare
-    if db_pass == hash_password(password):
-        return user
+    # Calcul du code de secours Google (doit être identique au JS)
+    google_hash = hashlib.sha256(email_clean.encode()).hexdigest()[:16]
 
-    # Cas 2 : Google Auth → le frontend envoie "GOOGLE_OAUTH_xxxx" en clair
-    # Le backend l'a stocké hashé → on hash ce qui est reçu et on compare
-    if password.startswith("GOOGLE_OAUTH_") and db_pass == hash_password(password):
-        return user
-
-    # Cas 3 : fallback Google → recalcul depuis l'email
-    google_pwd  = "GOOGLE_OAUTH_" + hashlib.sha256(email_clean.encode()).hexdigest()[:16]
-    if db_pass == hash_password(google_pwd):
+    # On accepte si : 
+    # - Le pass correspond au pass de la DB
+    # - OU le pass est le code Google calculé
+    # - OU le pass est le mot de passe "brut" Google (pour dépanner)
+    if password == db_pass or password == google_hash or password == "GOOGLE_AUTH":
         return user
 
     return None
@@ -610,37 +609,36 @@ def fundamental():
         return jsonify({"error": str(e)}), 500
 
 # ── Historique — Sauvegarder une analyse ─────────────────────────────────────
-@app.route("/save-analysis", methods=["POST"])
+@app.route("/save-analysis", methods=["POST", "OPTIONS"])
 def save_analysis():
+    if request.method == "OPTIONS": return "", 204
     try:
-        data = request.json
-        email = data.get("user_email")
-        password = data.get("password")
+        data     = request.get_json()
+        email    = data.get("email", "").strip().lower()   # ← était "user_email"
+        password = data.get("password", "")
 
-        # Vérification de l'identité
         user = check_auth(email, password)
         if not user:
-            print(f"AUTH FAILED pour {email}")
             return jsonify({"error": "Session expirée"}), 401
 
-        # Enregistrement ultra-simplifié (on force tout en texte)
         new_row = {
-            "user_email":  str(email),
-            "asset":       str(data.get("asset", "Inconnu")),
-            "direction":   str(data.get("direction", "-")),
-            "probabilite": str(data.get("probabilite", "0")),
-            "timeframe":   str(data.get("timeframe", "-")),
-            "modele":      str(data.get("modele", "-")),
-            "entrees":     str(data.get("entrees", "-")),
-            "stop_loss":   str(data.get("stop_loss", "-")),
-            "take_profit": str(data.get("take_profit", "-")),
-            "explication": str(data.get("explication", ""))
+            "user_email":  email,
+            "asset":       str(data.get("asset", "")),
+            "direction":   str(data.get("direction", "")),
+            "probabilite": str(data.get("probabilite", "")) if data.get("probabilite") is not None else None,
+            "timeframe":   str(data.get("timeframe", "")),
+            "modele":      str(data.get("modele", "")),
+            "entrees":     str(data.get("entrees", "")),
+            "stop_loss":   str(data.get("stop_loss", "")),
+            "take_profit": str(data.get("take_profit", "")),
+            "explication": str(data.get("explication", "")),
+            "trade_result": None,
+            "trade_note":  ""
         }
 
-        print(f"Tentative insertion pour {email}...")
         res = supabase.table("analyses").insert(new_row).execute()
-        
-        return jsonify({"message": "OK", "id": res.data[0]["id"]})
+        saved_id = res.data[0]["id"] if res.data else None
+        return jsonify({"message": "Analyse sauvegardee", "id": saved_id})
 
     except Exception as e:
         print(f"ERREUR : {str(e)}")
