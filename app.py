@@ -65,24 +65,25 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def check_auth(email, password):
-    # On nettoie l'email (enlever espaces et mettre en minuscule)
     email_clean = email.lower().strip()
-    
     res = supabase.table("users").select("*").eq("email", email_clean).execute()
     if not res.data:
         return None
-        
-    user = res.data[0]
-    db_pass = user.get("password")
+    user   = res.data[0]
+    db_pass = user.get("password", "")
 
-    # Calcul du code de secours Google (doit être identique au JS)
-    google_hash = hashlib.sha256(email_clean.encode()).hexdigest()[:16]
+    # Cas 1 : mot de passe classique → on hash ce qui est reçu et on compare
+    if db_pass == hash_password(password):
+        return user
 
-    # On accepte si : 
-    # - Le pass correspond au pass de la DB
-    # - OU le pass est le code Google calculé
-    # - OU le pass est le mot de passe "brut" Google (pour dépanner)
-    if password == db_pass or password == google_hash or password == "GOOGLE_AUTH":
+    # Cas 2 : Google Auth → le frontend envoie "GOOGLE_OAUTH_xxxx" en clair
+    # Le backend l'a stocké hashé → on hash ce qui est reçu et on compare
+    if password.startswith("GOOGLE_OAUTH_") and db_pass == hash_password(password):
+        return user
+
+    # Cas 3 : fallback Google → recalcul depuis l'email
+    google_pwd  = "GOOGLE_OAUTH_" + hashlib.sha256(email_clean.encode()).hexdigest()[:16]
+    if db_pass == hash_password(google_pwd):
         return user
 
     return None
