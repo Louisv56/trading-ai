@@ -65,27 +65,27 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def check_auth(email, password):
-    # 1. On cherche l'utilisateur dans la base de données par son email
-    res = supabase.table("users").select("*").eq("email", email).execute()
+    # On nettoie l'email (enlever espaces et mettre en minuscule)
+    email_clean = email.lower().strip()
     
+    res = supabase.table("users").select("*").eq("email", email_clean).execute()
     if not res.data:
-        return None  # Utilisateur inconnu
+        return None
         
     user = res.data[0]
-    db_password = user.get("password")
+    db_pass = user.get("password")
 
-    # 2. CAS A : C'est un utilisateur Google
-    # On accepte si le mot de passe envoyé est "GOOGLE_AUTH" 
-    # ou s'il correspond au hash généré par Google
-    google_hash = hashlib.sha256(email.encode()).hexdigest()[:16]
-    if password == "GOOGLE_AUTH" or password == google_hash:
+    # Calcul du code de secours Google (doit être identique au JS)
+    google_hash = hashlib.sha256(email_clean.encode()).hexdigest()[:16]
+
+    # On accepte si : 
+    # - Le pass correspond au pass de la DB
+    # - OU le pass est le code Google calculé
+    # - OU le pass est le mot de passe "brut" Google (pour dépanner)
+    if password == db_pass or password == google_hash or password == "GOOGLE_AUTH":
         return user
 
-    # 3. CAS B : C'est un utilisateur Standard
-    if password == db_password:
-        return user
-
-    return None # Mot de passe incorrect
+    return None
 
 def get_user(email: str):
     res = supabase.table("users").select("*").eq("email", email).execute()
