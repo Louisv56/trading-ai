@@ -64,24 +64,28 @@ MODELS_BY_PLAN = {
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-def check_auth(email: str, password: str):
-    """Retourne l'utilisateur si auth valide (email+password OU Google), sinon None."""
-    user = get_user(email)
-    if not user:
-        return None
-    # Cas 1 : mot de passe classique hashé
-    if user["password"] == hash_password(password):
+def check_auth(email, password):
+    # 1. On cherche l'utilisateur dans la base de données par son email
+    res = supabase.table("users").select("*").eq("email", email).execute()
+    
+    if not res.data:
+        return None  # Utilisateur inconnu
+        
+    user = res.data[0]
+    db_password = user.get("password")
+
+    # 2. CAS A : C'est un utilisateur Google
+    # On accepte si le mot de passe envoyé est "GOOGLE_AUTH" 
+    # ou s'il correspond au hash généré par Google
+    google_hash = hashlib.sha256(email.encode()).hexdigest()[:16]
+    if password == "GOOGLE_AUTH" or password == google_hash:
         return user
-    # Cas 2 : Google Auth — le frontend envoie déjà "GOOGLE_OAUTH_xxxx" en clair
-    # Le backend l'a stocké hashé, donc on compare hash(password_reçu) avec ce qui est en base
-    if password.startswith("GOOGLE_OAUTH_") and user["password"] == hash_password(password):
+
+    # 3. CAS B : C'est un utilisateur Standard
+    if password == db_password:
         return user
-    # Cas 3 : recalcul du hash Google à partir de l'email (compatibilité)
-    google_pwd   = "GOOGLE_OAUTH_" + hashlib.sha256(email.encode()).hexdigest()[:16]
-    google_hash  = hash_password(google_pwd)
-    if user["password"] == google_hash:
-        return user
-    return None
+
+    return None # Mot de passe incorrect
 
 def get_user(email: str):
     res = supabase.table("users").select("*").eq("email", email).execute()
@@ -609,39 +613,37 @@ def fundamental():
 def save_analysis():
     try:
         data = request.json
-        print(f"DEBUG: Données reçues -> {data}") # On voit ce qui arrive dans les logs Render
-
         email = data.get("user_email")
         password = data.get("password")
 
-        # Vérification simple de l'utilisateur
+        # Vérification de l'identité
         user = check_auth(email, password)
         if not user:
-            return jsonify({"error": "Session expirée, reconnectez-vous"}), 401
+            print(f"AUTH FAILED pour {email}")
+            return jsonify({"error": "Session expirée"}), 401
 
-        # On prépare l'insertion en forçant tout en TEXTE (str)
-        # Sauf l'email qui est déjà du texte
-        row_to_insert = {
-            "user_email":   str(email),
-            "asset":        str(data.get("asset", "Inconnu")),
-            "timeframe":    str(data.get("timeframe", "-")),
-            "modele":       str(data.get("modele", "-")),
-            "direction":    str(data.get("direction", "-")),
-            "entrees":      str(data.get("entrees", "-")),
-            "stop_loss":    str(data.get("stop_loss", "-")),
-            "take_profit":  str(data.get("take_profit", "-")),
-            "probabilite":  str(data.get("probabilite", "0")), # Forcé en texte
-            "explication":  str(data.get("explication", ""))
+        # Enregistrement ultra-simplifié (on force tout en texte)
+        new_row = {
+            "user_email":  str(email),
+            "asset":       str(data.get("asset", "Inconnu")),
+            "direction":   str(data.get("direction", "-")),
+            "probabilite": str(data.get("probabilite", "0")),
+            "timeframe":   str(data.get("timeframe", "-")),
+            "modele":      str(data.get("modele", "-")),
+            "entrees":     str(data.get("entrees", "-")),
+            "stop_loss":   str(data.get("stop_loss", "-")),
+            "take_profit": str(data.get("take_profit", "-")),
+            "explication": str(data.get("explication", ""))
         }
 
-        print(f"DEBUG: Tentative insertion Supabase...")
-        res = supabase.table("analyses").insert(row_to_insert).execute()
+        print(f"Tentative insertion pour {email}...")
+        res = supabase.table("analyses").insert(new_row).execute()
         
-        return jsonify({"message": "Analyse enregistrée !", "id": res.data[0]["id"]})
+        return jsonify({"message": "OK", "id": res.data[0]["id"]})
 
     except Exception as e:
-        print(f"ERREUR CRITIQUE SERVEUR: {str(e)}") # Très important pour débugger sur Render
-        return jsonify({"error": "Erreur interne au serveur"}), 500
+        print(f"ERREUR : {str(e)}")
+        return jsonify({"error": "Erreur serveur"}), 500
 
 
 # ── Historique — Récupérer les analyses ──────────────────────────────────────
