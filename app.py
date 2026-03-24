@@ -496,7 +496,7 @@ def webhook():
 
 
 
-# ── Analyse Fondamentale (Pro uniquement) ─────────────────────────────────────
+# ── Analyse Fondamentale (Free: 1/mois, Premium: 20/mois, Pro: illimité) ──────
 @app.route("/fundamental", methods=["POST", "OPTIONS"])
 def fundamental():
     if request.method == "OPTIONS": return "", 204
@@ -515,8 +515,34 @@ def fundamental():
         if not user:
             return jsonify({"error": "Non autorise. Connecte-toi."}), 401
 
-        if user["plan"] != "pro":
-            return jsonify({"error": "PRO_ONLY"}), 403
+        plan = user["plan"]
+
+        # Quotas fondamental par plan
+        FUND_LIMITS = {"free": 1, "premium": 20, "pro": None}  # None = illimité
+        fund_limit = FUND_LIMITS.get(plan, 1)
+
+        # Réinitialisation mensuelle du compteur fondamental
+        today       = date.today()
+        fund_used   = user.get("fond_utilisees", 0) or 0
+        fund_reset  = user.get("fond_reset_date")
+        if fund_reset:
+            reset_date = date.fromisoformat(str(fund_reset))
+            if today.month != reset_date.month or today.year != reset_date.year:
+                fund_used = 0
+                supabase.table("users").update({
+                    "fond_utilisees":  0,
+                    "fond_reset_date": today.isoformat()
+                }).eq("id", user["id"]).execute()
+        else:
+            # Première utilisation — initialiser
+            supabase.table("users").update({
+                "fond_utilisees":  0,
+                "fond_reset_date": today.isoformat()
+            }).eq("id", user["id"]).execute()
+
+        # Vérification du quota
+        if fund_limit is not None and fund_used >= fund_limit:
+            return jsonify({"error": "FUND_LIMIT_REACHED", "plan": plan, "limit": fund_limit}), 403
 
         FINNHUB_KEY = os.getenv("FINNHUB_API_KEY")
 
@@ -598,6 +624,16 @@ def fundamental():
             result["sentiment_couleur"] = "#ef4444"
         else:
             result["sentiment_couleur"] = "#f97316"
+
+        # Incrémenter le compteur
+        supabase.table("users").update({
+            "fond_utilisees": fund_used + 1
+        }).eq("id", user["id"]).execute()
+
+        # Infos quota dans la réponse
+        result["fond_utilisees"] = fund_used + 1
+        result["fond_limit"]     = fund_limit
+        result["fond_restantes"] = None if fund_limit is None else max(0, fund_limit - (fund_used + 1))
 
         return jsonify(result)
 
