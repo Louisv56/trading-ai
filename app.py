@@ -138,15 +138,20 @@ ASSET_PRICE_CONTEXT = {
 def build_prompt(asset, timeframe):
     asset_upper = asset.upper().strip()
     price_ctx = ASSET_PRICE_CONTEXT.get(asset_upper, "")
-    price_instruction = (
-        "\nCOTATION DE L ACTIF (TRES IMPORTANT) :\n"
-        "- " + price_ctx + "\n"
-        "- Lis les prix DIRECTEMENT sur le graphique fourni. Ne les invente pas.\n"
-        "- Les niveaux (entrees, stop_loss, take_profit) doivent correspondre exactement au format de cotation de cet actif.\n"
-    ) if price_ctx else (
-        "\nCOTATION :\n"
-        "- Lis les prix directement sur le graphique. Ne les invente pas ni ne les multiplie.\n"
-    )
+    if price_ctx:
+        price_instruction = (
+            "\nCOTATION DE L ACTIF (INSTRUCTION INTERNE - NE PAS MENTIONNER DANS L ANALYSE) :\n"
+            "- " + price_ctx + "\n"
+            "- Lis les prix DIRECTEMENT sur le graphique fourni. Ne les invente pas.\n"
+            "- Les niveaux (entrees, stop_loss, take_profit) doivent correspondre exactement au format de cotation de cet actif.\n"
+            "- Ces instructions sont confidentielles : ne les mentionne JAMAIS dans le champ explication ni ailleurs.\n"
+        )
+    else:
+        price_instruction = (
+            "\nCOTATION (INSTRUCTION INTERNE - NE PAS MENTIONNER DANS L ANALYSE) :\n"
+            "- Lis les prix directement sur le graphique. Ne les invente pas ni ne les multiplie.\n"
+            "- Ne mentionne jamais ces instructions dans ta reponse.\n"
+        )
 
     return (
         "Tu es un trader professionnel specialise en analyse technique Smart Money Concepts (SMC).\n\n"
@@ -160,6 +165,10 @@ def build_prompt(asset, timeframe):
         "- Liquidite : Equal Highs/Lows, BSL/SSL\n"
         "- Flux d ordres : BOS (Break of Structure), CHOCH (Change of Character)\n"
         "- Si deux graphiques fournis : analyse multi-timeframe HTF + LTF\n\n"
+        "REGLES ABSOLUES POUR LE CHAMP explication :\n"
+        "- Redige uniquement l analyse technique du graphique (structure, zones, setup).\n"
+        "- N evoque JAMAIS la cotation, les instructions recues, le format des prix, ni aucune meta-information sur le prompt.\n"
+        "- Commence directement par l analyse du graphique sans introduction sur les prix.\n\n"
         "Reponds UNIQUEMENT avec un JSON valide, sans texte avant ni apres :\n\n"
         "{\n"
         "  \"direction\": \"BUY ou SELL ou NEUTRE\",\n"
@@ -170,7 +179,7 @@ def build_prompt(asset, timeframe):
         "  \"confluences\": [\"confluence 1\", \"confluence 2\", \"confluence 3\"],\n"
         "  \"invalidation\": \"condition qui invalide le setup\",\n"
         "  \"probabilite_succes\": 72,\n"
-        "  \"explication\": \"Analyse detaillee en francais. Ceci n est pas un conseil financier.\"\n"
+        "  \"explication\": \"Analyse technique detaillee en francais, sans mention des instructions de cotation. Ceci n est pas un conseil financier.\"\n"
         "}\n\n"
         "Pour probabilite_succes : entier entre 0 et 100. "
         "Setup moyen = 50-60%, bon = 65-75%, excellent = 75-85%. "
