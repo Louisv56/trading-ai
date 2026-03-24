@@ -98,13 +98,63 @@ def reset_counter_if_needed(user: dict):
         user["analyses_utilisees"] = 0
     return user
 
+ASSET_PRICE_CONTEXT = {
+    # Matières premières
+    "XAUUSD": "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "GOLD":   "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "XAU":    "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "XAGUSD": "L'argent (XAGUSD) se cote entre 20 et 50 USD (ex: 32.50, 28.75). Format: 2 chiffres avant la virgule, 2 apres.",
+    "SILVER": "L'argent (XAGUSD) se cote entre 20 et 50 USD (ex: 32.50, 28.75). Format: 2 chiffres avant la virgule, 2 apres.",
+    "OIL":    "Le petrole (WTI) se cote entre 60 et 120 USD (ex: 82.50, 75.30). Format: 2 chiffres avant la virgule, 2 apres.",
+    "USOIL":  "Le petrole (WTI) se cote entre 60 et 120 USD (ex: 82.50, 75.30). Format: 2 chiffres avant la virgule, 2 apres.",
+    "WTI":    "Le petrole (WTI) se cote entre 60 et 120 USD (ex: 82.50, 75.30). Format: 2 chiffres avant la virgule, 2 apres.",
+    # Crypto
+    "BTC":     "Bitcoin se cote entre 20000 et 120000 USD (ex: 87500.00, 95200.50). Format: 5 chiffres, pas de zeros superflus.",
+    "BTCUSD":  "Bitcoin se cote entre 20000 et 120000 USD (ex: 87500.00, 95200.50). Format: 5 chiffres, pas de zeros superflus.",
+    "BTCUSDT": "Bitcoin se cote entre 20000 et 120000 USD (ex: 87500.00, 95200.50). Format: 5 chiffres, pas de zeros superflus.",
+    "ETH":     "Ethereum se cote entre 1000 et 6000 USD (ex: 2850.00, 3400.50).",
+    "ETHUSD":  "Ethereum se cote entre 1000 et 6000 USD (ex: 2850.00, 3400.50).",
+    "SOL":     "Solana se cote entre 20 et 300 USD (ex: 145.50, 210.00).",
+    "XRP":     "XRP se cote entre 0.30 et 5.00 USD (ex: 1.25, 2.80).",
+    # Forex majeurs
+    "EURUSD":  "EUR/USD se cote entre 1.0000 et 1.2000 (ex: 1.0850, 1.1230). Format: 1 chiffre avant la virgule, 4 apres.",
+    "GBPUSD":  "GBP/USD se cote entre 1.1000 et 1.4000 (ex: 1.2650, 1.3100). Format: 1 chiffre avant la virgule, 4 apres.",
+    "USDJPY":  "USD/JPY se cote entre 100 et 160 (ex: 149.50, 152.30). Format: 3 chiffres avant la virgule, 2 apres.",
+    "USDCHF":  "USD/CHF se cote entre 0.8500 et 1.0500 (ex: 0.9050, 0.8780). Format: 0 avant la virgule, 4 apres.",
+    "AUDUSD":  "AUD/USD se cote entre 0.5500 et 0.8500 (ex: 0.6420, 0.7150). Format: 0 avant la virgule, 4 apres.",
+    "USDCAD":  "USD/CAD se cote entre 1.2000 et 1.4500 (ex: 1.3580, 1.4120). Format: 1 chiffre avant la virgule, 4 apres.",
+    "NZDUSD":  "NZD/USD se cote entre 0.5000 et 0.7500 (ex: 0.5820, 0.6350). Format: 0 avant la virgule, 4 apres.",
+    # Indices
+    "SP500":   "Le S&P 500 se cote entre 3000 et 7000 points (ex: 5650, 5820). Nombres entiers ou 1 decimale.",
+    "SPX":     "Le S&P 500 se cote entre 3000 et 7000 points (ex: 5650, 5820). Nombres entiers ou 1 decimale.",
+    "US500":   "Le S&P 500 se cote entre 3000 et 7000 points (ex: 5650, 5820). Nombres entiers ou 1 decimale.",
+    "NASDAQ":  "Le Nasdaq se cote entre 10000 et 25000 points (ex: 19850, 21400). Nombres entiers ou 1 decimale.",
+    "NAS100":  "Le Nasdaq se cote entre 10000 et 25000 points (ex: 19850, 21400). Nombres entiers ou 1 decimale.",
+    "DAX":     "Le DAX se cote entre 12000 et 25000 points (ex: 21500, 22800). Nombres entiers ou 1 decimale.",
+    "FTSE":    "Le FTSE 100 se cote entre 6000 et 10000 points (ex: 8350, 8720). Nombres entiers ou 1 decimale.",
+    "DJI":     "Le Dow Jones se cote entre 30000 et 50000 points (ex: 42500, 44200). Nombres entiers ou 1 decimale.",
+}
+
 def build_prompt(asset, timeframe):
+    asset_upper = asset.upper().strip()
+    price_ctx = ASSET_PRICE_CONTEXT.get(asset_upper, "")
+    price_instruction = (
+        "\nCOTATION DE L ACTIF (TRES IMPORTANT) :\n"
+        "- " + price_ctx + "\n"
+        "- Lis les prix DIRECTEMENT sur le graphique fourni. Ne les invente pas.\n"
+        "- Les niveaux (entrees, stop_loss, take_profit) doivent correspondre exactement au format de cotation de cet actif.\n"
+    ) if price_ctx else (
+        "\nCOTATION :\n"
+        "- Lis les prix directement sur le graphique. Ne les invente pas ni ne les multiplie.\n"
+    )
+
     return (
         "Tu es un trader professionnel specialise en analyse technique Smart Money Concepts (SMC).\n\n"
         "CONTEXTE :\n"
         "- Actif : " + asset + "\n"
-        "- Timeframe principal : " + timeframe + "\n\n"
-        "METHODOLOGIE :\n"
+        "- Timeframe principal : " + timeframe + "\n"
+        + price_instruction +
+        "\nMETHODOLOGIE :\n"
         "- Structure de marche : Higher High/Higher Low ou Lower High/Lower Low\n"
         "- Zones institutionnelles : Order Blocks, Fair Value Gaps (FVG), Breaker Blocks\n"
         "- Liquidite : Equal Highs/Lows, BSL/SSL\n"
