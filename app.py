@@ -292,7 +292,7 @@ def login():
             return jsonify({"error": "Identifiants incorrects"}), 401
         user = reset_counter_if_needed(user)
         if user["plan"] == "free":
-            restantes = max(0, 2 - user["analyses_utilisees"])
+            restantes = max(0, 5 - user["analyses_utilisees"])
         elif user["plan"] == "premium":
             restantes = max(0, 50 - user["analyses_utilisees"])
         else:
@@ -369,7 +369,7 @@ def google_callback():
         user = reset_counter_if_needed(user)
 
         if user["plan"] == "free":
-            restantes = max(0, 2 - user["analyses_utilisees"])
+            restantes = max(0, 5 - user["analyses_utilisees"])
         elif user["plan"] == "premium":
             restantes = max(0, 50 - user["analyses_utilisees"])
         else:
@@ -408,7 +408,7 @@ def analyze():
         plan  = user["plan"]
         count = user["analyses_utilisees"]
 
-        if plan == "free" and count >= 2:
+        if plan == "free" and count >= 5:
             return jsonify({"error": "LIMIT_REACHED", "plan": "free"}), 403
         if plan == "premium" and count >= 50:
             return jsonify({"error": "LIMIT_REACHED", "plan": "premium"}), 403
@@ -446,7 +446,7 @@ def analyze():
 
         # Quota restant
         if plan == "free":
-            result["analyses_restantes"] = max(0, 2 - (count + 1))
+            result["analyses_restantes"] = max(0, 5 - (count + 1))
         elif plan == "premium":
             result["analyses_restantes"] = max(0, 50 - (count + 1))
         else:
