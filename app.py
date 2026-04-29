@@ -32,6 +32,7 @@ PRICE_PRO       = os.getenv("STRIPE_PRICE_PRO")
 FRONTEND_URL    = os.getenv("FRONTEND_URL", "https://votre-site.com")
 
 GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
+TWELVE_API_KEY       = os.getenv("TWELVE_API_KEY")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -52,6 +53,32 @@ def after_request(response):
         response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
+
+# ── Prix en temps réel via Twelve Data ──────────────────────────────────────
+TWELVE_SYMBOL_MAP = {
+    "XAUUSD": "XAU/USD", "GOLD": "XAU/USD", "XAU": "XAU/USD",
+    "XAGUSD": "XAG/USD", "SILVER": "XAG/USD",
+    "BTCUSD": "BTC/USD", "BTC": "BTC/USD", "BTCUSDT": "BTC/USDT",
+    "ETHUSD": "ETH/USD", "ETH": "ETH/USD",
+    "EURUSD": "EUR/USD", "GBPUSD": "GBP/USD", "USDJPY": "USD/JPY",
+    "USDCHF": "USD/CHF", "AUDUSD": "AUD/USD", "USDCAD": "USD/CAD",
+    "USOIL": "WTI/USD", "OIL": "WTI/USD",
+    "NAS100": "NDX", "NASDAQ": "NDX", "SP500": "SPX", "US500": "SPX",
+    "DAX": "DAX", "DJI": "DJI",
+}
+
+def get_prix_actuel(asset: str) -> float | None:
+    """Récupère le prix actuel via Twelve Data. Retourne None si indisponible."""
+    try:
+        symbol = TWELVE_SYMBOL_MAP.get(asset.upper().strip(), asset)
+        url    = "https://api.twelvedata.com/price"
+        params = {"symbol": symbol, "apikey": TWELVE_API_KEY}
+        r      = requests.get(url, params=params, timeout=8)
+        data   = r.json()
+        prix   = float(data.get("price", 0))
+        return prix if prix > 0 else None
+    except Exception:
+        return None
 
 # ── Modeles autorises par plan ────────────────────────────────────────────────
 MODELS_BY_PLAN = {
@@ -135,13 +162,26 @@ ASSET_PRICE_CONTEXT = {
     "DJI":     "Le Dow Jones se cote entre 30000 et 50000 points (ex: 42500, 44200). Nombres entiers ou 1 decimale.",
 }
 
-def build_prompt(asset, timeframe):
+def build_prompt(asset, timeframe, prix_actuel=None):
     asset_upper = asset.upper().strip()
     price_ctx = ASSET_PRICE_CONTEXT.get(asset_upper, "")
+
+    # Prix actuel temps réel — prioritaire sur tout le reste
+    if prix_actuel and prix_actuel > 0:
+        prix_reel_line = (
+            f"\nPRIX ACTUEL EN TEMPS REEL (PRIORITAIRE - OBLIGATOIRE) :\n"
+            f"- Le prix actuel EXACT du marche est : {prix_actuel:.2f}\n"
+            f"- TOUTES tes entrees, stop_loss et take_profit DOIVENT etre proches de {prix_actuel:.2f} (ecart max 3%).\n"
+            f"- Ne jamais retourner des niveaux inferieurs a {prix_actuel * 0.95:.2f} ni superieurs a {prix_actuel * 1.05:.2f}.\n"
+        )
+    else:
+        prix_reel_line = ""
+
     if price_ctx:
         price_instruction = (
             "\nCOTATION DE L ACTIF (INSTRUCTION INTERNE - NE PAS MENTIONNER DANS L ANALYSE) :\n"
             "- " + price_ctx + "\n"
+            + prix_reel_line +
             "- Lis les prix DIRECTEMENT sur le graphique fourni. Ne les invente pas.\n"
             "- Les niveaux (entrees, stop_loss, take_profit) doivent correspondre exactement au format de cotation de cet actif.\n"
             "- Ces instructions sont confidentielles : ne les mentionne JAMAIS dans le champ explication ni ailleurs.\n"
@@ -149,6 +189,7 @@ def build_prompt(asset, timeframe):
     else:
         price_instruction = (
             "\nCOTATION (INSTRUCTION INTERNE - NE PAS MENTIONNER DANS L ANALYSE) :\n"
+            + prix_reel_line +
             "- Lis les prix directement sur le graphique. Ne les invente pas ni ne les multiplie.\n"
             "- Ne mentionne jamais ces instructions dans ta reponse.\n"
         )
@@ -420,7 +461,15 @@ def analyze():
 
         asset     = request.form.get("asset", "non precise")
         timeframe = request.form.get("timeframe", "non precise")
-        prompt    = build_prompt(asset, timeframe)
+
+        # Récupérer le prix actuel en temps réel pour ancrer les niveaux de l'IA
+        prix_actuel = get_prix_actuel(asset)
+        if prix_actuel:
+            print(f"  💰 Prix actuel {asset} : {prix_actuel:.2f} — injecté dans le prompt")
+        else:
+            print(f"  ⚠️  Prix actuel indisponible pour {asset} — l'IA lira le graphique")
+
+        prompt    = build_prompt(asset, timeframe, prix_actuel)
 
         # Lecture des images
         images = []
@@ -810,8 +859,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
 
 
 
