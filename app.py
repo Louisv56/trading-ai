@@ -32,7 +32,7 @@ PRICE_PRO       = os.getenv("STRIPE_PRICE_PRO")
 FRONTEND_URL    = os.getenv("FRONTEND_URL", "https://votre-site.com")
 
 GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID")
-TWELVE_API_KEY       = os.getenv("TWELVE_API_KEY")
+TWELVE_API_KEY       = os.getenv("TWELVE_API_KEY", "9dfcdeda508a491ba1a5eefd915cb553")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -67,7 +67,7 @@ TWELVE_SYMBOL_MAP = {
     "DAX": "DAX", "DJI": "DJI",
 }
 
-def get_prix_actuel(asset: str) -> float | None:
+def get_prix_actuel(asset: str):
     """Récupère le prix actuel via Twelve Data. Retourne None si indisponible."""
     try:
         symbol = TWELVE_SYMBOL_MAP.get(asset.upper().strip(), asset)
@@ -75,9 +75,16 @@ def get_prix_actuel(asset: str) -> float | None:
         params = {"symbol": symbol, "apikey": TWELVE_API_KEY}
         r      = requests.get(url, params=params, timeout=8)
         data   = r.json()
-        prix   = float(data.get("price", 0))
-        return prix if prix > 0 else None
-    except Exception:
+        if "price" not in data:
+            print(f"  ⚠️  Twelve Data pas de prix pour {symbol} : {data}")
+            return None
+        prix = float(data["price"])
+        if prix > 0:
+            print(f"  💰 Prix Twelve Data {symbol} : {prix:.2f}")
+            return prix
+        return None
+    except Exception as e:
+        print(f"  ⚠️  get_prix_actuel exception ({asset}) : {e}")
         return None
 
 # ── Modeles autorises par plan ────────────────────────────────────────────────
@@ -127,9 +134,9 @@ def reset_counter_if_needed(user: dict):
 
 ASSET_PRICE_CONTEXT = {
     # Matières premières
-    "XAUUSD": "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
-    "GOLD":   "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
-    "XAU":    "L'or (XAUUSD) se cote entre 1800 et 3500 USD (ex: 3375.50, 2950.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "XAUUSD": "L'or (XAUUSD) se cote actuellement entre 3000 et 5000 USD (ex: 4520.00, 4350.00, 3980.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "GOLD":   "L'or (XAUUSD) se cote actuellement entre 3000 et 5000 USD (ex: 4520.00, 4350.00, 3980.00). Format: 4 chiffres avant la virgule, 2 apres.",
+    "XAU":    "L'or (XAUUSD) se cote actuellement entre 3000 et 5000 USD (ex: 4520.00, 4350.00, 3980.00). Format: 4 chiffres avant la virgule, 2 apres.",
     "XAGUSD": "L'argent (XAGUSD) se cote entre 20 et 50 USD (ex: 32.50, 28.75). Format: 2 chiffres avant la virgule, 2 apres.",
     "SILVER": "L'argent (XAGUSD) se cote entre 20 et 50 USD (ex: 32.50, 28.75). Format: 2 chiffres avant la virgule, 2 apres.",
     "OIL":    "Le petrole (WTI) se cote entre 60 et 120 USD (ex: 82.50, 75.30). Format: 2 chiffres avant la virgule, 2 apres.",
@@ -859,7 +866,6 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
 
 
 
