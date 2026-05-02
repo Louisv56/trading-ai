@@ -461,10 +461,16 @@ def analyze():
         if plan == "premium" and count >= 50:
             return jsonify({"error": "LIMIT_REACHED", "plan": "premium"}), 403
 
-        # Verifie que le modele est autorise pour ce plan
-        allowed = MODELS_BY_PLAN.get(plan, ["gpt-4o-mini"])
-        if model not in allowed:
-            return jsonify({"error": "Modele non disponible pour votre plan"}), 403
+        # Clé secrète robot — bypass la vérification de plan (accès illimité à Claude)
+        robot_key = request.form.get("robot_key", "")
+        ROBOT_SECRET = os.getenv("ROBOT_SECRET", "mytradingx_robot_2025")
+        if robot_key == ROBOT_SECRET:
+            pass  # Robot autorisé sur tous les modèles sans restriction
+        else:
+            # Vérifie que le modèle est autorisé pour ce plan
+            allowed = MODELS_BY_PLAN.get(plan, ["gpt-4o-mini"])
+            if model not in allowed:
+                return jsonify({"error": "Modele non disponible pour votre plan"}), 403
 
         asset     = request.form.get("asset", "non precise")
         timeframe = request.form.get("timeframe", "non precise")
@@ -866,25 +872,3 @@ thread.start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
